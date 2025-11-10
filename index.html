@@ -2,89 +2,146 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Twilio Voice Test</title>
+  <title>Twilio Voice Web Client</title>
   <style>
-    body { font-family: Arial, sans-serif; background: #f7f9fb; padding: 20px; }
-    button { padding: 10px 16px; margin: 6px; border: none; border-radius: 6px; cursor: pointer; }
-    #status { margin-top: 12px; color: #444; }
+    body { font-family: sans-serif; max-width: 480px; margin: 2rem auto; }
+    textarea { width: 100%; height: 120px; }
+    button { padding: 0.6rem 1.2rem; margin-right: 0.5rem; }
+    #status { margin: 1rem 0; font-weight: bold; }
   </style>
 </head>
 <body>
-  <h2>🔊 Twilio Voice Test (Skypack)</h2>
-  <button id="btn-init">Initialize Device</button>
-  <button id="btn-call" disabled>Make Call</button>
-  <button id="btn-hangup" disabled>Hang Up</button>
-  <p id="status">Status: Not connected</p>
+  <h1>Voice Test</h1>
+  <div>
+    <label>
+      Identity (optional):
+      <input id="identity" type="text" placeholder="web-agent-1" />
+    </label>
+  </div>
+  <div>
+    <label>
+      Dial To (e.g., agent SIP/number):
+      <input id="dial-to" type="text" placeholder="+15551234567" />
+    </label>
+  </div>
+  <div id="status">Device not initialized</div>
+  <button id="initBtn">Initialize Device</button>
+  <button id="callBtn" disabled>Call</button>
+  <button id="hangupBtn" disabled>Hang up</button>
+  <h3>Logs</h3>
+  <textarea id="log" readonly></textarea>
 
-  <script type="module">
-    // import { Device } from "https://sdk.twilio.com/js/voice/2.7.3/twilio-voice.min.js";
+  <!-- Twilio Voice SDK (v1.x) -->
+  <script src="https://sdk.twilio.com/js/client/v1.13/twilio.min.js"></script>
+  <script>
+    const TOKEN_ENDPOINT = "https://magnet-essentially-focuses-mile.trycloudflare.com/api/v1/telephony/access-token";
+    const logEl = document.getElementById("log");
+    const statusEl = document.getElementById("status");
+    const initBtn = document.getElementById("initBtn");
+    const callBtn = document.getElementById("callBtn");
+    const hangupBtn = document.getElementById("hangupBtn");
 
-    // const { Device } = twilioVoiceSdk;
-    import * as Twilio from "https://cdn.skypack.dev/@twilio/voice-sdk";
-    const Device = Twilio.Device; // Access from the module namespace
+    let device;
+    let activeConnection = null;
 
-    const initBtn = document.getElementById("btn-init");
-    const callBtn = document.getElementById("btn-call");
-    const hangupBtn = document.getElementById("btn-hangup");
-    const status = document.getElementById("status");
-
-    let device, connection;
-
-    async function getToken() {
-      const res = await fetch("https://magnet-essentially-focuses-mile.trycloudflare.com/api/v1/telephony/access-token", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          identity: "testuser",
-          ttl_seconds: 3600,
-          allow_incoming: true
-        })
-      });
-      const data = await res.json();
-      console.log("Access Token Response:", data);
-      return data.token; // Ensure this matches your backend key name
+    function log(message) {
+      logEl.value = `${new Date().toISOString()} - ${message}\n${logEl.value}`;
     }
 
-    initBtn.onclick = async () => {
-      status.textContent = "Fetching token...";
-      const token = await getToken();
-      console.log("Get Token Response:", token);
+    async function getToken(identity) {
+      const body = identity ? JSON.stringify({ identity }) : "{}";
 
-      status.textContent = "Initializing Twilio Device...";
-      device = new Device(token, { debug: true });
-
-      device.on("ready", () => {
-        status.textContent = "✅ Device ready to make calls!";
-        callBtn.disabled = false;
+      const response = await fetch(TOKEN_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
       });
 
-      device.on("error", (err) => {
-        console.error("Twilio Device Error:", err);
-        status.textContent = "❌ Error: " + err.message;
-      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Token request failed: ${response.status} ${text}`);
+      }
+      const data = await response.json();
+      return data.token;
+    }
 
-      device.on("incoming", (conn) => {
-        status.textContent = "📞 Incoming call...";
-        conn.accept();
-      });
+    async function initDevice() {
+      statusEl.textContent = "Requesting token...";
+      try {
+        const identity = document.getElementById("identity").value.trim();
+        const token = await getToken(identity);
 
-      device.on("disconnect", () => {
-        status.textContent = "Call ended.";
-        hangupBtn.disabled = true;
-      });
-    };
+        device = new Twilio.Device(token, {
+          codecPreferences: ["opus", "pcmu"],
+          fakeLocalDTMF: true,
+          enableRingingState: true,
+        });
 
-    callBtn.onclick = () => {
-      connection = device.connect({ params: { To: "client:testuser" } });
-      status.textContent = "📲 Calling...";
+        device.on("ready", () => {
+          statusEl.textContent = `Device ready (identity: ${device.identity})`;
+          log("Device ready");
+          callBtn.disabled = false;
+        });
+
+        device.on("error", (error) => {
+          statusEl.textContent = `Device error: ${error.message}`;
+          log(`Device error: ${error.message}`);
+        });
+
+        device.on("incoming", (conn) => {
+          log("Incoming call - auto-accepting");
+          activeConnection = conn;
+          conn.accept();
+          hangupBtn.disabled = false;
+        });
+
+        device.on("connect", (conn) => {
+          log("Call connected");
+          activeConnection = conn;
+          hangupBtn.disabled = false;
+        });
+
+        device.on("disconnect", () => {
+          log("Call disconnected");
+          activeConnection = null;
+          hangupBtn.disabled = true;
+        });
+
+        device.on("cancel", () => {
+          log("Call cancelled");
+          activeConnection = null;
+          hangupBtn.disabled = true;
+        });
+
+        statusEl.textContent = "Device initializing...";
+      } catch (err) {
+        statusEl.textContent = `Init failed: ${err.message}`;
+        log(err.message);
+      }
+    }
+
+    function placeCall() {
+      if (!device) {
+        log("Device not ready");
+        return;
+      }
+      const to = document.getElementById("dial-to").value.trim();
+      log(`Dialing ${to}`);
+      activeConnection = device.connect({ params: { To: to } });
       hangupBtn.disabled = false;
-    };
+    }
 
-    hangupBtn.onclick = () => {
-      if (device) device.disconnectAll();
-      status.textContent = "🔴 Call ended manually.";
-    };
+    function hangupCall() {
+      if (activeConnection) {
+        log("Hanging up");
+        activeConnection.disconnect();
+        activeConnection = null;
+      }
+    }
+
+    initBtn.onclick = initDevice;
+    callBtn.onclick = placeCall;
+    hangupBtn.onclick = hangupCall;
   </script>
 </body>
 </html>
