@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Twilio Voice Test</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f7f9fb; padding: 20px; }
+    button { padding: 10px 16px; margin: 6px; border: none; border-radius: 6px; cursor: pointer; }
+    #status { margin-top: 12px; color: #444; }
+  </style>
+</head>
+<body>
+  <h2>🔊 Twilio Voice Test (Skypack)</h2>
+  <button id="btn-init">Initialize Device</button>
+  <button id="btn-call" disabled>Make Call</button>
+  <button id="btn-hangup" disabled>Hang Up</button>
+  <p id="status">Status: Not connected</p>
+
+  <script type="module">
+    // import { Device } from "https://sdk.twilio.com/js/voice/2.7.3/twilio-voice.min.js";
+
+    // const { Device } = twilioVoiceSdk;
+    import * as Twilio from "https://cdn.skypack.dev/@twilio/voice-sdk";
+    const Device = Twilio.Device; // Access from the module namespace
+
+    const initBtn = document.getElementById("btn-init");
+    const callBtn = document.getElementById("btn-call");
+    const hangupBtn = document.getElementById("btn-hangup");
+    const status = document.getElementById("status");
+
+    let device, connection;
+
+    async function getToken() {
+      const res = await fetch("https://magnet-essentially-focuses-mile.trycloudflare.com/api/v1/telephony/access-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          identity: "testuser",
+          ttl_seconds: 3600,
+          allow_incoming: true
+        })
+      });
+      const data = await res.json();
+      console.log("Access Token Response:", data);
+      return data.token; // Ensure this matches your backend key name
+    }
+
+    initBtn.onclick = async () => {
+      status.textContent = "Fetching token...";
+      const token = await getToken();
+      console.log("Get Token Response:", token);
+
+      status.textContent = "Initializing Twilio Device...";
+      device = new Device(token, { debug: true });
+
+      device.on("ready", () => {
+        status.textContent = "✅ Device ready to make calls!";
+        callBtn.disabled = false;
+      });
+
+      device.on("error", (err) => {
+        console.error("Twilio Device Error:", err);
+        status.textContent = "❌ Error: " + err.message;
+      });
+
+      device.on("incoming", (conn) => {
+        status.textContent = "📞 Incoming call...";
+        conn.accept();
+      });
+
+      device.on("disconnect", () => {
+        status.textContent = "Call ended.";
+        hangupBtn.disabled = true;
+      });
+    };
+
+    callBtn.onclick = () => {
+      connection = device.connect({ params: { To: "client:testuser" } });
+      status.textContent = "📲 Calling...";
+      hangupBtn.disabled = false;
+    };
+
+    hangupBtn.onclick = () => {
+      if (device) device.disconnectAll();
+      status.textContent = "🔴 Call ended manually.";
+    };
+  </script>
+</body>
+</html>
