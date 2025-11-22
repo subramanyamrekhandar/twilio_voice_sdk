@@ -2,75 +2,238 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Twilio Voice Web Client</title>
+  <title>Voice Agent WebRTC Test Client</title>
   <style>
-    body { font-family: sans-serif; max-width: 480px; margin: 2rem auto; }
-    textarea { width: 100%; height: 120px; }
-    button { padding: 0.6rem 1.2rem; margin-right: 0.5rem; }
-    #status { margin: 1rem 0; font-weight: bold; }
+    body { 
+      font-family: sans-serif; 
+      max-width: 600px; 
+      margin: 2rem auto; 
+      padding: 1rem;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 2rem;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    h1 { color: #333; margin-top: 0; }
+    .form-group {
+      margin: 1rem 0;
+    }
+    label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight: bold;
+      color: #555;
+    }
+    input[type="text"] {
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 1rem;
+      box-sizing: border-box;
+    }
+    textarea { 
+      width: 100%; 
+      height: 200px; 
+      padding: 0.75rem;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 0.9rem;
+      resize: vertical;
+    }
+    button { 
+      padding: 0.75rem 1.5rem; 
+      margin-right: 0.5rem;
+      margin-bottom: 0.5rem;
+      border: none;
+      border-radius: 4px;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    #initBtn {
+      background: #4CAF50;
+      color: white;
+    }
+    #initBtn:hover:not(:disabled) {
+      background: #45a049;
+    }
+    #callBtn {
+      background: #2196F3;
+      color: white;
+    }
+    #callBtn:hover:not(:disabled) {
+      background: #0b7dda;
+    }
+    #hangupBtn {
+      background: #f44336;
+      color: white;
+    }
+    #hangupBtn:hover:not(:disabled) {
+      background: #da190b;
+    }
+    #status { 
+      margin: 1rem 0; 
+      padding: 1rem;
+      border-radius: 4px;
+      font-weight: bold;
+      background: #e3f2fd;
+      color: #1976d2;
+    }
+    #status.error {
+      background: #ffebee;
+      color: #c62828;
+    }
+    #status.success {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+    .info {
+      background: #fff3cd;
+      border-left: 4px solid #ffc107;
+      padding: 1rem;
+      margin: 1rem 0;
+      border-radius: 4px;
+    }
+    .info p {
+      margin: 0.5rem 0;
+      font-size: 0.9rem;
+    }
   </style>
 </head>
 <body>
-  <h1>Voice Test</h1>
-  <div>
-    <label>
-      Identity (optional):
-      <input id="identity" type="text" placeholder="web-agent-1" />
-    </label>
+  <div class="container">
+    <h1>🎤 Voice Agent WebRTC Test</h1>
+    
+    <div class="info">
+      <p><strong>Instructions:</strong></p>
+      <p>1. Enter your backend URL (e.g., https://your-domain.com or http://localhost:8000)</p>
+      <p>2. Enter an optional identity (or leave blank for auto-generated)</p>
+      <p>3. Enter the phone number to dial (must be assigned to an active agent)</p>
+      <p>4. Click "Initialize Device" to get a Twilio token</p>
+      <p>5. Click "Call" to connect to your voice agent</p>
+    </div>
+
+    <div class="form-group">
+      <label for="backend-url">Backend URL:</label>
+      <input 
+        id="backend-url" 
+        type="text" 
+        placeholder="https://your-domain.com or http://localhost:8000"
+        value="http://localhost:8000"
+      />
+    </div>
+
+    <div class="form-group">
+      <label for="identity">Identity (optional):</label>
+      <input 
+        id="identity" 
+        type="text" 
+        placeholder="web-agent-1 (auto-generated if blank)"
+      />
+    </div>
+
+    <div class="form-group">
+      <label for="dial-to">Dial To (Phone Number or Agent ID):</label>
+      <input 
+        id="dial-to" 
+        type="text" 
+        placeholder="+15551234567 (phone) or agent_abc123 (WebRTC)"
+      />
+      <p style="font-size: 0.85rem; color: #666; margin-top: 0.25rem;">
+        💡 Use phone number (e.g., +15551234567) or agent ID (e.g., agent_abc123) for WebRTC without phone number
+      </p>
+    </div>
+
+    <div id="status" class="info">Device not initialized</div>
+
+    <div>
+      <button id="initBtn">Initialize Device</button>
+      <button id="callBtn" disabled>Call</button>
+      <button id="hangupBtn" disabled>Hang up</button>
+    </div>
+
+    <h3>📋 Logs</h3>
+    <textarea id="log" readonly></textarea>
   </div>
-  <div>
-    <label>
-      Dial To (e.g., agent SIP/number):
-      <input id="dial-to" type="text" placeholder="+15551234567" />
-    </label>
-  </div>
-  <div id="status">Device not initialized</div>
-  <button id="initBtn">Initialize Device</button>
-  <button id="callBtn" disabled>Call</button>
-  <button id="hangupBtn" disabled>Hang up</button>
-  <h3>Logs</h3>
-  <textarea id="log" readonly></textarea>
 
   <!-- Twilio Voice SDK (v1.x) -->
   <script src="https://sdk.twilio.com/js/client/v1.13/twilio.min.js"></script>
   <script>
-    const TOKEN_ENDPOINT = "https://magnet-essentially-focuses-mile.trycloudflare.com/api/v1/telephony/access-token";
     const logEl = document.getElementById("log");
     const statusEl = document.getElementById("status");
+    const backendUrlEl = document.getElementById("backend-url");
     const initBtn = document.getElementById("initBtn");
     const callBtn = document.getElementById("callBtn");
     const hangupBtn = document.getElementById("hangupBtn");
-
     let device;
     let activeConnection = null;
 
-    function log(message) {
-      logEl.value = `${new Date().toISOString()} - ${message}\n${logEl.value}`;
+    function log(message, type = "info") {
+      const timestamp = new Date().toISOString();
+      const prefix = type === "error" ? "❌" : type === "success" ? "✅" : "ℹ️";
+      logEl.value = `${timestamp} ${prefix} ${message}\n${logEl.value}`;
     }
 
-    async function getToken(identity) {
-      const body = identity ? JSON.stringify({ identity }) : "{}";
-
-      const response = await fetch(TOKEN_ENDPOINT, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body,
-      });
-
-      if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`Token request failed: ${response.status} ${text}`);
+    function setStatus(message, type = "info") {
+      statusEl.textContent = message;
+      statusEl.className = type;
+      if (type === "error") {
+        log(message, "error");
+      } else if (type === "success") {
+        log(message, "success");
       }
-      const data = await response.json();
-      return data.token;
+    }
+
+    async function getToken(identity, backendUrl) {
+      const endpoint = `${backendUrl.replace(/\/$/, "")}/api/v1/telephony/access-token`;
+      const body = identity ? JSON.stringify({ identity }) : "{}";
+      
+      log(`Requesting token from: ${endpoint}`);
+      
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Token request failed: ${response.status} ${response.statusText}\n${text}`);
+        }
+
+        const data = await response.json();
+        log(`Token received successfully. Identity: ${data.identity}`, "success");
+        return data.token;
+      } catch (err) {
+        log(`Token request error: ${err.message}`, "error");
+        throw err;
+      }
     }
 
     async function initDevice() {
-      statusEl.textContent = "Requesting token...";
+      const backendUrl = backendUrlEl.value.trim();
+      if (!backendUrl) {
+        setStatus("Please enter a backend URL", "error");
+        return;
+      }
+
+      setStatus("Requesting token...", "info");
+      initBtn.disabled = true;
+
       try {
         const identity = document.getElementById("identity").value.trim();
-        const token = await getToken(identity);
-
+        const token = await getToken(identity || undefined, backendUrl);
+        
         device = new Twilio.Device(token, {
           codecPreferences: ["opus", "pcmu"],
           fakeLocalDTMF: true,
@@ -78,70 +241,110 @@
         });
 
         device.on("ready", () => {
-          statusEl.textContent = `Device ready (identity: ${device.identity})`;
-          log("Device ready");
+          setStatus(`Device ready (identity: ${device.identity})`, "success");
+          log("Device ready and registered with Twilio", "success");
           callBtn.disabled = false;
+          initBtn.disabled = false;
         });
 
         device.on("error", (error) => {
-          statusEl.textContent = `Device error: ${error.message}`;
-          log(`Device error: ${error.message}`);
+          setStatus(`Device error: ${error.message}`, "error");
+          log(`Device error: ${error.message}`, "error");
+          initBtn.disabled = false;
         });
 
         device.on("incoming", (conn) => {
-          log("Incoming call - auto-accepting");
+          log("Incoming call received - auto-accepting", "info");
           activeConnection = conn;
           conn.accept();
           hangupBtn.disabled = false;
+          setStatus("Incoming call connected", "success");
         });
 
         device.on("connect", (conn) => {
-          log("Call connected");
+          log("Call connected", "success");
           activeConnection = conn;
           hangupBtn.disabled = false;
+          callBtn.disabled = true;
+          setStatus("Call connected - You can now speak", "success");
         });
 
         device.on("disconnect", () => {
-          log("Call disconnected");
+          log("Call disconnected", "info");
           activeConnection = null;
           hangupBtn.disabled = true;
+          callBtn.disabled = false;
+          setStatus("Call disconnected", "info");
         });
 
         device.on("cancel", () => {
-          log("Call cancelled");
+          log("Call cancelled", "info");
           activeConnection = null;
           hangupBtn.disabled = true;
+          callBtn.disabled = false;
+          setStatus("Call cancelled", "info");
         });
 
-        statusEl.textContent = "Device initializing...";
+        setStatus("Device initializing...", "info");
       } catch (err) {
-        statusEl.textContent = `Init failed: ${err.message}`;
-        log(err.message);
+        setStatus(`Init failed: ${err.message}`, "error");
+        initBtn.disabled = false;
       }
     }
 
     function placeCall() {
       if (!device) {
-        log("Device not ready");
+        log("Device not ready. Please initialize device first.", "error");
         return;
       }
+
       const to = document.getElementById("dial-to").value.trim();
-      log(`Dialing ${to}`);
-      activeConnection = device.connect({ params: { To: to } });
-      hangupBtn.disabled = false;
+      if (!to) {
+        log("Please enter a phone number to dial", "error");
+        return;
+      }
+
+      log(`Dialing ${to}...`, "info");
+      setStatus(`Calling ${to}...`, "info");
+      
+      try {
+        activeConnection = device.connect({ params: { To: to } });
+        hangupBtn.disabled = false;
+        callBtn.disabled = true;
+      } catch (err) {
+        log(`Call error: ${err.message}`, "error");
+        setStatus(`Call failed: ${err.message}`, "error");
+      }
     }
 
     function hangupCall() {
       if (activeConnection) {
-        log("Hanging up");
+        log("Hanging up call...", "info");
         activeConnection.disconnect();
         activeConnection = null;
+        hangupBtn.disabled = true;
+        callBtn.disabled = false;
+        setStatus("Call ended", "info");
+      } else {
+        log("No active call to hang up", "info");
       }
     }
 
+    // Event listeners
     initBtn.onclick = initDevice;
     callBtn.onclick = placeCall;
     hangupBtn.onclick = hangupCall;
+
+    // Allow Enter key to trigger actions
+    document.getElementById("dial-to").addEventListener("keypress", (e) => {
+      if (e.key === "Enter" && !callBtn.disabled) {
+        placeCall();
+      }
+    });
+
+    // Initial log message
+    log("WebRTC Test Client loaded. Configure settings and click 'Initialize Device' to begin.", "info");
   </script>
 </body>
 </html>
+
